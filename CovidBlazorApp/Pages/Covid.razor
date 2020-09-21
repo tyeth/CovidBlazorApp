@@ -1,0 +1,174 @@
+﻿@page "/covid"
+@inject HttpClient HttpClient
+@using System.Numerics
+@using DevExpress.Blazor
+ 
+<h3>Covid</h3>
+<select class="form-control" @onchange="SelectCountryChanged">
+    <option value="" disabled>-- Select Country --</option>
+    @foreach (var country in _countries)
+    {
+        <option value="@country.code">@country.name</option>
+    }
+</select>
+<button @onclick="AddDataSet">Add</button>
+
+<div class="arrange-horizontally">
+    @foreach (var country in CountryDatasets)
+    {
+    <div style="width: 350px">
+        <span>@country.Name </span>
+        <button @onclick="@(() => RemoveColumn(country.Name))" style="width: 60px; height: 20px; color: red; font-size: x-small">Remove</button>
+        <br />
+
+        <span><b>Population:</b> @country.Population </span>
+        <br />
+
+        <span><b>Total Cases: </b>@country.ConfirmedCases</span>
+        <br />
+
+        <div>
+            <span>Deaths Per 100k</span>
+            <DxChart Data="@country.DeathPer100kTimeSteps">
+                <DxChartCommonSeries AggregationMethod="@(i => (int)i.Average())" NameField="@((CovidTimeStep c) => "")" ArgumentField="@(i => i.Date.ToString("MM/dd"))" ValueField="@((CovidTimeStep i) => i.Cases)">
+                    <SeriesTemplate Context="settings">
+                        <DxChartLineSeries Settings="@settings" Color="@(getColorForCountry("confirmed"))"></DxChartLineSeries>
+                    </SeriesTemplate>
+                </DxChartCommonSeries>
+            </DxChart>
+        </div>
+        @*...same approach for death cases & norm. death cases*@
+
+        <div>
+            <DxChart Data="@country.ConfirmedTimeSteps">
+                <DxChartCommonSeries AggregationMethod="@(i => (int)i.Average())" NameField="@((CovidTimeStep c) => "")" ArgumentField="@(i => i.Date.ToString("MM/dd"))" ValueField="@((CovidTimeStep i) => i.Cases)">
+                    <SeriesTemplate Context="settings">
+                        <DxChartLineSeries Settings="@settings" Color="@(getColorForCountry("confirmed"))"></DxChartLineSeries>
+                    </SeriesTemplate>
+                </DxChartCommonSeries>
+            </DxChart>
+        </div>
+        <div>
+            <DxChart Data="@country.DeathTimeSteps">
+                <DxChartCommonSeries AggregationMethod="@(i => (int)i.Average())" NameField="@((CovidTimeStep c) => "")" ArgumentField="@(i => i.Date.ToString("MM/dd"))" ValueField="@((CovidTimeStep i) => i.Cases)">
+                    <SeriesTemplate Context="settings">
+                        <DxChartLineSeries Settings="@settings" Color="@(getColorForCountry("death"))"></DxChartLineSeries>
+                    </SeriesTemplate>
+                </DxChartCommonSeries>
+            </DxChart>
+        </div>
+
+
+    </div>
+    }
+</div>
+
+@code {
+    List<ComboCountry> _countries = new List<ComboCountry>();
+    List<APICountry> _jsonCountries;
+    string _selectedCountry = "";
+    List<CountryComparisonInformation> CountryDatasets = new List<CountryComparisonInformation>();
+
+    public static System.Drawing.Color getColorForCountry(string country)
+    {
+        return System.Drawing.Color.Red;
+    }
+
+
+    private void RemoveColumn(string countryName)
+    {
+        CountryDatasets.RemoveRange(CountryDatasets.FindIndex(x => x.Name == countryName),1);
+    }
+
+
+    protected override async Task OnInitializedAsync()
+    {
+
+        var url = APIUrls.GetCountryList();
+        _jsonCountries = await HttpClient.GetFromJsonAsync<List<APICountry>>(url);
+        foreach (var c in _jsonCountries)
+        {
+            _countries.Add(new ComboCountry
+            {
+                code = c.ISO2,
+                name = c.Country
+            });
+        }
+        _countries = (from c in _countries orderby c.name ascending select c).ToList();
+    }
+
+    private void SelectCountryChanged(Microsoft.AspNetCore.Components.ChangeEventArgs e)
+    {
+        try
+        {
+            _selectedCountry = e.Value.ToString();
+            Console.WriteLine(e.Value);
+        }
+        finally
+        {
+
+        }
+    }
+
+    private async void AddDataSet(MouseEventArgs e)
+    {
+        var countryToAdd = new CountryComparisonInformation();
+        var url = APIUrls.GetCountryPopulationDataUrl();
+        url = url.Replace("*", _selectedCountry);
+
+        var popJsonResponse = await HttpClient.GetFromJsonAsync<ParallelCountryInformation>( new Uri(url));
+
+        countryToAdd.Name = popJsonResponse.name;
+        countryToAdd.Population = popJsonResponse.population;
+
+
+        var covidUrl = APIUrls.GetCountryDailyCases();
+        var selectedCountryToAdd = _jsonCountries.First(x => x.ISO2 == _selectedCountry).Slug; // countryToAdd.Name;
+
+        var confirmedCovidUrl = covidUrl.Replace("*", selectedCountryToAdd);
+        confirmedCovidUrl = confirmedCovidUrl.Replace("#", "confirmed");
+
+        var timeStepCollectionConfirmed = new List<CovidTimeStep>();
+        timeStepCollectionConfirmed = await CovidStatic.GetCountryDailyDataByStatus(confirmedCovidUrl);
+        countryToAdd.ConfirmedTimeSteps = timeStepCollectionConfirmed;
+
+
+        var deathCovidUrl = covidUrl.Replace("*", selectedCountryToAdd);
+        deathCovidUrl = deathCovidUrl.Replace("#", "deaths");
+        var timeStepCollectionDeath = await CovidStatic.GetCountryDailyDataByStatus(deathCovidUrl);
+
+        countryToAdd.DeathTimeSteps = timeStepCollectionDeath;
+
+
+        // 100k
+        var timeStepCollectionDeathPer100k = new List<CovidTimeStep>();
+        foreach (var step in countryToAdd.DeathTimeSteps)
+        {
+            var timestepdeathper100k = new CovidTimeStep()
+            {
+                Country = step.Country,
+                CountryCode = step.CountryCode,
+                Date = step.Date,
+                Status = "deathper100k"
+            };
+
+            BigInteger cases = new BigInteger(step.Cases);
+            BigInteger casesDividend = BigInteger.Multiply(cases, new BigInteger(100000));
+
+            BigInteger casesPer100k = BigInteger.Divide(casesDividend, new BigInteger(Convert.ToInt32(countryToAdd.Population)));
+
+            timestepdeathper100k.Cases = Convert.ToInt32(casesPer100k.ToString());
+
+            timeStepCollectionDeathPer100k.Add(timestepdeathper100k);
+        }
+
+        countryToAdd.DeathPer100kTimeSteps = timeStepCollectionDeathPer100k;
+
+        // Add dataset and update display.
+        CountryDatasets.Add(countryToAdd);
+        this.StateHasChanged();
+
+    }
+
+
+}
