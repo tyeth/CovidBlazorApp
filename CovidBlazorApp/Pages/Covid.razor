@@ -32,7 +32,7 @@
             <DxChart Data="@country.DeathPer100kTimeSteps">
                 <DxChartCommonSeries AggregationMethod="@(i => (int)i.Average())" NameField="@((CovidTimeStep c) => "")" ArgumentField="@(i => i.Date.ToString("MM/dd"))" ValueField="@((CovidTimeStep i) => i.Cases)">
                     <SeriesTemplate Context="settings">
-                        <DxChartLineSeries Settings="@settings" Color="@(getColorForCountry("confirmed"))"></DxChartLineSeries>
+                        <DxChartLineSeries Settings="@settings" Color="@(getColorForCountry("deathper100k"))"></DxChartLineSeries>
                     </SeriesTemplate>
                 </DxChartCommonSeries>
             </DxChart>
@@ -40,6 +40,7 @@
         @*...same approach for death cases & norm. death cases*@
 
         <div>
+            <span>Confirmed Cases</span>
             <DxChart Data="@country.ConfirmedTimeSteps">
                 <DxChartCommonSeries AggregationMethod="@(i => (int)i.Average())" NameField="@((CovidTimeStep c) => "")" ArgumentField="@(i => i.Date.ToString("MM/dd"))" ValueField="@((CovidTimeStep i) => i.Cases)">
                     <SeriesTemplate Context="settings">
@@ -49,6 +50,7 @@
             </DxChart>
         </div>
         <div>
+            <span>Deaths</span>
             <DxChart Data="@country.DeathTimeSteps">
                 <DxChartCommonSeries AggregationMethod="@(i => (int)i.Average())" NameField="@((CovidTimeStep c) => "")" ArgumentField="@(i => i.Date.ToString("MM/dd"))" ValueField="@((CovidTimeStep i) => i.Cases)">
                     <SeriesTemplate Context="settings">
@@ -64,21 +66,30 @@
 </div>
 
 @code {
-    List<ComboCountry> _countries = new List<ComboCountry>();
-    List<APICountry> _jsonCountries;
-    string _selectedCountry = "";
-    List<CountryComparisonInformation> CountryDatasets = new List<CountryComparisonInformation>();
+        List<ComboCountry> _countries = new List<ComboCountry>();
+        List<APICountry> _jsonCountries;
+        string _selectedCountry = "";
+        List<CountryComparisonInformation> CountryDatasets = new List<CountryComparisonInformation>();
 
-    public static System.Drawing.Color getColorForCountry(string country)
-    {
-        return System.Drawing.Color.Red;
-    }
+        public static System.Drawing.Color getColorForCountry(string country)
+        {
+            switch (country)
+            {
+                case "death":
+                    return System.Drawing.Color.Red;
+                case "confirmed":
+                    return System.Drawing.Color.Blue;
+                default:
+                    break;
+            }
+            return System.Drawing.Color.Green;
+        }
 
 
-    private void RemoveColumn(string countryName)
-    {
-        CountryDatasets.RemoveRange(CountryDatasets.FindIndex(x => x.Name == countryName),1);
-    }
+        private void RemoveColumn(string countryName)
+        {
+            CountryDatasets.RemoveRange(CountryDatasets.FindIndex(x => x.Name == countryName),1);
+        }
 
 
     protected override async Task OnInitializedAsync()
@@ -163,6 +174,8 @@
         }
 
         countryToAdd.DeathPer100kTimeSteps = timeStepCollectionDeathPer100k;
+
+        countryToAdd.ConfirmedCases = timeStepCollectionConfirmed.Sum(x => x.Cases);
 
         // Add dataset and update display.
         CountryDatasets.Add(countryToAdd);
